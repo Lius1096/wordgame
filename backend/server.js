@@ -49,12 +49,12 @@ app.get('/api/scores', async (req, res) => {
 // Servir front statique après les routes API
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Route catch-all SPA
+//catch-all SPA
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
-// Démarrage serveur
+// Démarrage du serveur
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
 });
