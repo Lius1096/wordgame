@@ -55,12 +55,22 @@
 
   <script>
     const categories = {
-      "Fruits": "fruit",
-      "Sports": "sport",
-      "Culture": "culture",
-      "Langue": "language",
-      "Pays": "country",
-      "Ville": "city"
+      fr: {
+        "Fruits": "fruit",
+        "Sports": "sport",
+        "Culture": "culture",
+        "Langue": "langue",
+        "Pays": "pays",
+        "Ville": "ville"
+      },
+      en: {
+        "Fruits": "fruit",
+        "Sports": "sport",
+        "Culture": "culture",
+        "Language": "language",
+        "Country": "country",
+        "City": "city"
+      }
     };
 
     const translations = {
@@ -72,7 +82,9 @@
         wrongAnswer: "<i class='fas fa-times-circle text-red-600 mr-1'></i> Mauvaise réponse.",
         timeOut: "<i class='fas fa-stopwatch text-red-600 mr-1'></i> Temps écoulé ! Le mot était : ",
         newGame: "<i class='fas fa-redo mr-1'></i> Nouvelle devinette",
-        score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score"
+        score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score",
+        loading: "Chargement...",
+        noWord: " Aucun mot trouvé."
       },
       en: {
         title: "<i class='fas fa-font mr-1 text-blue-500'></i> Guess the Scrambled Word",
@@ -82,7 +94,9 @@
         wrongAnswer: "<i class='fas fa-times-circle text-red-600 mr-1'></i> Incorrect.",
         timeOut: "<i class='fas fa-stopwatch text-red-600 mr-1'></i> Time's up! The word was: ",
         newGame: "<i class='fas fa-redo mr-1'></i> New word",
-        score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score"
+        score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score",
+        loading: "Loading...",
+        noWord: " No word found."
       }
     };
 
@@ -100,21 +114,9 @@
       document.getElementById("timer-label").innerText = t.timerLabel;
       document.getElementById("new-game-btn").innerHTML = t.newGame;
       document.getElementById("score-label").innerHTML = `${t.score} : <span id="score">${score}</span>`;
-    }
-
-    async function getRandomWordByCategory(keyword) {
-      const res = await fetch(`https://api.datamuse.com/words?ml=${keyword}&max=50`);
-      const data = await res.json();
-      const filtered = data.filter(w => !w.word.includes(' ') && w.word.length <= 10);
-      if (!filtered.length) return null;
-      const random = filtered[Math.floor(Math.random() * filtered.length)];
-      return random.word;
-    }
-
-    async function getHint(word) {
-      const res = await fetch(`https://api.datamuse.com/words?sp=${word}&md=d`);
-      const data = await res.json();
-      return data[0]?.defs?.[0]?.split("\t")[1] || "";
+      document.getElementById("result").innerText = "";
+      document.getElementById("hint").innerText = "";
+      setupGame();
     }
 
     function scramble(word) {
@@ -135,29 +137,67 @@
       }, 1000);
     }
 
+    async function getRandomWordByCategory(keyword) {
+      if (currentLang === "fr") {
+        return await getRandomFrenchWord(keyword);
+      }
+
+      try {
+        const res = await fetch(`https://api.datamuse.com/words?ml=${keyword}&max=50`);
+        const data = await res.json();
+        const filtered = data.filter(w => !w.word.includes(' ') && w.word.length >= 4 && w.word.length <= 10);
+        if (!filtered.length) return null;
+        const random = filtered[Math.floor(Math.random() * filtered.length)];
+        return { word: random.word.toLowerCase(), hint: await getHint(random.word.toLowerCase()) };
+      } catch (err) {
+        console.error("Erreur API Datamuse :", err);
+        return null;
+      }
+    }
+
+    async function getRandomFrenchWord(keyword) {
+      try {
+        const res = await fetch(`http://localhost:3000/api/french-words/random?category=${keyword}`);
+        const data = await res.json();
+        if (!data?.word) return null;
+        return { word: data.word.toLowerCase(), hint: data.hint || "" };
+      } catch (err) {
+        console.error("Erreur API locale française :", err);
+        return null;
+      }
+    }
+
+    async function getHint(word) {
+      const res = await fetch(`https://api.datamuse.com/words?sp=${word}&md=d`);
+      const data = await res.json();
+      return data[0]?.defs?.[0]?.split("\t")[1] || "";
+    }
+
     async function setupGame() {
       clearInterval(timerInterval);
-      const categoryNames = Object.keys(categories);
+      const t = translations[currentLang];
+      const langCategories = categories[currentLang];
+      const categoryNames = Object.keys(langCategories);
       const selectedCategory = categoryNames[Math.floor(Math.random() * categoryNames.length)];
-      const keyword = categories[selectedCategory];
+      const keyword = langCategories[selectedCategory];
 
       document.getElementById("category").innerText = selectedCategory;
       document.getElementById("result").innerText = "";
       document.getElementById("hint").innerText = "";
       document.getElementById("guess").value = "";
+      document.getElementById("scrambled").innerText = t.loading;
 
-      const word = await getRandomWordByCategory(keyword);
-      if (!word) {
-        document.getElementById("scrambled").innerText = "❌ Aucun mot trouvé.";
+      const result = await getRandomWordByCategory(keyword);
+      if (!result || !result.word) {
+        document.getElementById("scrambled").innerText = t.noWord;
         return;
       }
 
-      currentWord = word.toLowerCase();
+      currentWord = result.word;
       document.getElementById("scrambled").innerText = scramble(currentWord).toUpperCase();
 
-      const hint = await getHint(currentWord);
-      if (hint) {
-        document.getElementById("hint").innerHTML = "<i class='fas fa-lightbulb mr-1'></i>" + hint;
+      if (result.hint && currentLang === "en") {
+        document.getElementById("hint").innerHTML = "<i class='fas fa-lightbulb mr-1'></i>" + result.hint;
       }
 
       resetTimer();
@@ -185,11 +225,7 @@
         await fetch("http://localhost:3000/api/scores", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username,
-            score,
-            language: currentLang
-          })
+          body: JSON.stringify({ username, score, language: currentLang })
         });
       } catch (err) {
         console.warn("Erreur lors de l'enregistrement du score :", err);
