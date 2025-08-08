@@ -1,15 +1,69 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
   <meta charset="UTF-8" />
   <title>Jeu de mots mélangés</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
-    body { font-family: 'Segoe UI', sans-serif; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    /* Animation grosse vibration */
+    @keyframes big-shake {
+
+      0%,
+      100% {
+        transform: translate(0, 0);
+      }
+
+      10%,
+      30%,
+      50%,
+      70%,
+      90% {
+        transform: translate(-20px, 0);
+      }
+
+      20%,
+      40%,
+      60%,
+      80% {
+        transform: translate(20px, 0);
+      }
+    }
+
+    .big-shake {
+      animation: big-shake 0.8s ease-in-out;
+    }
+
+    /* Flash écran blanc plein écran */
+    #flash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      transition: opacity 0.3s ease;
+    }
+
+    #flash-screen.active {
+      opacity: 1;
+      pointer-events: auto;
+      transition: opacity 0.5s ease;
+    }
   </style>
 </head>
+
 <body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
+
+  <div id="flash-screen"></div> <!-- Flash écran -->
 
   <div class="w-full max-w-md bg-white rounded-lg shadow p-6">
     <div class="flex justify-between items-center mb-4">
@@ -23,7 +77,8 @@
     </div>
 
     <p class="text-gray-600 text-sm mb-2" id="subtitle">Tu as 30 secondes pour répondre.</p>
-    <p class="mb-2"><i class="fas fa-book mr-1 text-purple-600"></i> <span id="category" class="font-semibold text-blue-600">...</span></p>
+    <p class="mb-2"><i class="fas fa-book mr-1 text-purple-600"></i> <span id="category"
+        class="font-semibold text-blue-600">...</span></p>
     <div id="scrambled" class="text-3xl font-mono mb-4 text-green-700 text-center">Chargement...</div>
 
     <input id="guess" type="text" placeholder="Ta réponse" class="w-full p-2 border rounded mb-2" />
@@ -34,6 +89,12 @@
     <div class="mt-4 text-center text-sm text-gray-500">
       <i class="fas fa-stopwatch mr-1 text-red-500"></i>
       <span id="timer-label">Temps restant</span> : <span id="timer" class="font-bold text-red-600">30</span>s
+    </div>
+
+    <!-- Tentatives restantes -->
+    <div class="mt-2 text-sm text-red-600 text-center">
+      <i class="fas fa-times mr-1 text-red-500"></i>
+      Tentatives restantes : <span id="attempts">3</span>
     </div>
 
     <div id="result" class="mt-3 text-center font-semibold text-lg"></div>
@@ -84,7 +145,9 @@
         newGame: "<i class='fas fa-redo mr-1'></i> Nouvelle devinette",
         score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score",
         loading: "Chargement...",
-        noWord: " Aucun mot trouvé."
+        noWord: " Aucun mot trouvé.",
+        adrenalineMessage: "Waoooh, vous êtes presque là ! Une surprise vous attend...",
+        failedMessage: "<i class='fas fa-thumbs-down text-red-600 mr-1'></i> Raté ! Le mot était : "
       },
       en: {
         title: "<i class='fas fa-font mr-1 text-blue-500'></i> Guess the Scrambled Word",
@@ -96,7 +159,9 @@
         newGame: "<i class='fas fa-redo mr-1'></i> New word",
         score: "<i class='fas fa-star mr-1 text-yellow-500'></i> Score",
         loading: "Loading...",
-        noWord: " No word found."
+        noWord: " No word found.",
+        adrenalineMessage: "🔥 Feel the adrenaline rush! Keep it up! 🔥",
+        failedMessage: "<i class='fas fa-thumbs-down text-red-600 mr-1'></i> Failed! The word was: "
       }
     };
 
@@ -104,6 +169,7 @@
     let currentWord = "";
     let timer = 30;
     let score = 0;
+    let attempts = 3;
     let timerInterval;
 
     function changeLanguage(lang) {
@@ -132,7 +198,10 @@
         document.getElementById("timer").innerText = timer;
         if (timer <= 0) {
           clearInterval(timerInterval);
-          document.getElementById("result").innerHTML = translations[currentLang].timeOut + currentWord;
+          const t = translations[currentLang];
+          document.getElementById("result").innerHTML = t.timeOut + currentWord;
+          // Passe au mot suivant après délai
+          setTimeout(setupGame, 3000);
         }
       }, 1000);
     }
@@ -141,7 +210,6 @@
       if (currentLang === "fr") {
         return await getRandomFrenchWord(keyword);
       }
-
       try {
         const res = await fetch(`https://api.datamuse.com/words?ml=${keyword}&max=50`);
         const data = await res.json();
@@ -194,6 +262,8 @@
       }
 
       currentWord = result.word;
+      attempts = 3;
+      document.getElementById("attempts").innerText = attempts;
       document.getElementById("scrambled").innerText = scramble(currentWord).toUpperCase();
 
       if (result.hint && currentLang === "en") {
@@ -213,10 +283,78 @@
         score++;
         document.getElementById("score").innerText = score;
         result.innerHTML = t.goodAnswer;
+
+        if (score === 10) {
+          launchConfetti();
+        }
+
+        // Message adrénaline à 18 et 19 points
+        if (score === 18 || score === 19) {
+          showAdrenalineMessage();
+        }
+
+        if (score === 20) {
+          launchConfetti("gold");
+          bigVibration();
+          flashScreen();
+        }
+
         await saveScore();
+
+        // Passe à la devinette suivante après un court délai
+        setTimeout(setupGame, 2000);
       } else {
-        result.innerHTML = t.wrongAnswer;
+        attempts--;
+        document.getElementById("attempts").innerText = attempts;
+        if (attempts > 0) {
+          result.innerHTML = t.wrongAnswer;
+        } else {
+          clearInterval(timerInterval);
+          result.innerHTML = translations[currentLang].failedMessage + currentWord;
+          document.getElementById("hint").innerText = "💡 Ne baisse jamais les bras, un autre mot arrive...";
+          setTimeout(setupGame, 3000);
+        }
       }
+    }
+
+    function bigVibration() {
+      if (navigator.vibrate) {
+        navigator.vibrate([300, 200, 300, 200, 500]);
+      }
+      document.body.classList.add("big-shake");
+      setTimeout(() => {
+        document.body.classList.remove("big-shake");
+      }, 800);
+    }
+
+    function launchConfetti(color = null) {
+      confetti({
+        particleCount: 150,
+        spread: 100,
+        origin: { y: 0.6 },
+        colors: color ? [color, "#FFD700", "#FF4500"] : undefined
+      });
+      setTimeout(() => {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: color ? [color, "#FFD700", "#FF4500"] : undefined
+        });
+      }, 1000);
+    }
+
+    function showAdrenalineMessage() {
+      const result = document.getElementById("result");
+      result.innerHTML = `<i class="fas fa-bolt text-yellow-600 mr-1"></i> ${translations[currentLang].adrenalineMessage}`;
+    }
+
+    function flashScreen() {
+      const flash = document.getElementById("flash-screen");
+      flash.classList.add("active");
+      setTimeout(() => {
+        flash.classList.remove("active");
+      }, 300);
     }
 
     async function saveScore() {
@@ -234,5 +372,8 @@
 
     setupGame();
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </body>
+
 </html>
